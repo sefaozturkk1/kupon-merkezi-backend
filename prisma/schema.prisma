@@ -1,0 +1,231 @@
+// =============================================
+// KUPON MERKEZİ - Veritabanı Şeması (Prisma)
+// =============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// =============================================
+// 1. KULLANICI (USER)
+// =============================================
+model User {
+  id              String    @id @default(uuid())
+  telegramId      String    @unique @map("telegram_id")
+  username        String?
+  firstName       String?   @map("first_name")
+  lastName        String?   @map("last_name")
+  photoUrl        String?   @map("photo_url")
+  role            String    @default("USER") // USER, ADMIN, SUPERADMIN
+  isActive        Boolean   @default(true) @map("is_active")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // İlişkiler
+  coupons         Coupon[]           @relation("CouponOwner")
+  playedCoupons   PlayedCoupon[]
+  ownedGroups     Community[]        @relation("CommunityOwner")
+  memberships     CommunityMember[]
+  announcements   Announcement[]
+  statistics      UserStatistic[]
+
+  @@map("users")
+}
+
+// =============================================
+// 2. TOPLULUK (COMMUNITY / TELEGRAM GRUBU)
+// =============================================
+model Community {
+  id                String    @id @default(uuid())
+  telegramGroupId   String    @unique @map("telegram_group_id")
+  name              String
+  description       String?
+  photoUrl          String?   @map("photo_url")
+  inviteLink        String?   @map("invite_link")
+  isActive          Boolean   @default(true) @map("is_active")
+  ownerId           String    @map("owner_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // İlişkiler
+  owner             User              @relation("CommunityOwner", fields: [ownerId], references: [id])
+  members           CommunityMember[]
+  announcements     Announcement[]
+  couponShares      CouponShare[]
+
+  @@map("communities")
+}
+
+// =============================================
+// 3. TOPLULUK ÜYELİĞİ
+// =============================================
+model CommunityMember {
+  id            String          @id @default(uuid())
+  userId        String          @map("user_id")
+  communityId   String          @map("community_id")
+  role          String          @default("MEMBER") // MEMBER, MODERATOR, ADMIN
+  joinedAt      DateTime        @default(now()) @map("joined_at")
+
+  // İlişkiler
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community     Community       @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@map("community_members")
+}
+
+// =============================================
+// 4. KUPON (COUPON)
+// =============================================
+model Coupon {
+  id              String        @id @default(uuid())
+  title           String
+  totalOdds       Decimal       @map("total_odds")
+  stakeAmount     Decimal       @map("stake_amount")
+  potentialWin    Decimal       @map("potential_win")
+  currency        String        @default("TRY")
+  visibility      String        @default("PUBLIC") // PUBLIC, PRIVATE
+  status          String        @default("PENDING") // PENDING, LIVE, WON, LOST, PARTIAL, VOID
+  source          String        @default("MANUAL") // MANUAL, AI_PHOTO
+  photoUrl        String?       @map("photo_url")
+  userId          String        @map("user_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  settledAt       DateTime?     @map("settled_at")
+
+  // İlişkiler
+  user            User          @relation("CouponOwner", fields: [userId], references: [id], onDelete: Cascade)
+  selections      CouponSelection[]
+  playedBy        PlayedCoupon[]
+  shares          CouponShare[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([visibility])
+  @@index([createdAt])
+  @@map("coupons")
+}
+
+// =============================================
+// 5. KUPON SEÇİMİ (MAÇ + TAHMİN)
+// =============================================
+model CouponSelection {
+  id              String          @id @default(uuid())
+  couponId        String          @map("coupon_id")
+  matchId         String?         @map("match_id")       // API-Football match ID
+  homeTeam        String          @map("home_team")
+  awayTeam        String          @map("away_team")
+  league          String?
+  matchDate       DateTime?       @map("match_date")
+  betType         String          @map("bet_type")        // Örn: "Maç Sonucu", "Alt/Üst 2.5"
+  prediction      String                                   // Örn: "1", "X", "2", "Alt", "Üst"
+  odds            Decimal
+  status          String          @default("PENDING") // PENDING, WINNING, LOSING, WON, LOST, VOID
+  homeScore       Int?            @map("home_score")
+  awayScore       Int?            @map("away_score")
+  matchStatus     String          @default("NOT_STARTED")   @map("match_status") // NOT_STARTED, FIRST_HALF vb.
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // İlişkiler
+  coupon          Coupon          @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([matchId])
+  @@map("coupon_selections")
+}
+
+// =============================================
+// 6. KUPON OYNAMA / KOPYALAMA
+// =============================================
+model PlayedCoupon {
+  id              String      @id @default(uuid())
+  userId          String      @map("user_id")
+  originalCouponId String     @map("original_coupon_id")
+  stakeAmount     Decimal     @map("stake_amount")
+  potentialWin    Decimal     @map("potential_win")
+  status          String      @default("PENDING")
+  playedAt        DateTime    @default(now()) @map("played_at")
+
+  // İlişkiler
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalCoupon  Coupon      @relation(fields: [originalCouponId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([originalCouponId])
+  @@map("played_coupons")
+}
+
+// =============================================
+// 7. KUPON PAYLAŞIMI (TELEGRAM KANALLARINA)
+// =============================================
+model CouponShare {
+  id              String    @id @default(uuid())
+  couponId        String    @map("coupon_id")
+  communityId     String    @map("community_id")
+  telegramMessageId String? @map("telegram_message_id")
+  sharedAt        DateTime  @default(now()) @map("shared_at")
+
+  // İlişkiler
+  coupon          Coupon    @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  community       Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, communityId])
+  @@map("coupon_shares")
+}
+
+// =============================================
+// 8. DUYURU (ANNOUNCEMENT)
+// =============================================
+model Announcement {
+  id              String    @id @default(uuid())
+  title           String
+  content         String
+  imageUrl        String?   @map("image_url")
+  communityId     String    @map("community_id")
+  authorId        String    @map("author_id")
+  isPinned        Boolean   @default(false) @map("is_pinned")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // İlişkiler
+  community       Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author          User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+  @@map("announcements")
+}
+
+// =============================================
+// 9. KULLANICI İSTATİSTİKLERİ
+// =============================================
+model UserStatistic {
+  id              String          @id @default(uuid())
+  userId          String          @map("user_id")
+  period          String          @default("ALL_TIME") // DAILY, MONTHLY, YEARLY, ALL_TIME
+  periodDate      DateTime        @map("period_date")     // Gün: 2024-01-15, Ay: 2024-01-01, Yıl: 2024-01-01
+  totalCoupons    Int             @default(0) @map("total_coupons")
+  wonCoupons      Int             @default(0) @map("won_coupons")
+  lostCoupons     Int             @default(0) @map("lost_coupons")
+  totalStaked     Decimal         @default(0) @map("total_staked")
+  totalWon        Decimal         @default(0) @map("total_won")
+  totalLost       Decimal         @default(0) @map("total_lost")
+  netProfit       Decimal         @default(0) @map("net_profit")
+  profitMargin    Decimal         @default(0) @map("profit_margin") // % olarak
+  winRate         Decimal         @default(0) @map("win_rate") // % olarak
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // İlişkiler
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period, periodDate])
+  @@index([userId])
+  @@map("user_statistics")
+}
