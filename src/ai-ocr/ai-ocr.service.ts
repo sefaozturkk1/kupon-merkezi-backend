@@ -35,7 +35,16 @@ export class AiOcrService {
     }
 
     try {
-      const base64Image = file.buffer.toString('base64');
+      let base64Image: string;
+      if (file.buffer) {
+        base64Image = file.buffer.toString('base64');
+      } else if (file.path) {
+        const fs = require('fs');
+        base64Image = fs.readFileSync(file.path, { encoding: 'base64' });
+      } else {
+        throw new BadRequestException('Fotoğraf verisi okunamadı');
+      }
+      
       const mimeType = file.mimetype || 'image/jpeg';
       const promptText = `Sen bir bahis kuponu analiz asistanısın. Yüklenen kupon fotoğrafından
 maçları, bahis seçeneklerini, oranları ve kupon bilgilerini çıkarıyorsun.
