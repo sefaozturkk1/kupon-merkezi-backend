@@ -33,6 +33,13 @@ export class FootballApiController {
     return this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
   }
 
+  @Get('team-live')
+  @ApiOperation({ summary: 'Takımın canlı oynanan maçları' })
+  @ApiQuery({ name: 'teamId', example: 645 })
+  async getTeamLive(@Query('teamId') teamId: number) {
+    return this.footballApi.getTeamLiveMatches(teamId);
+  }
+
   @Get('team-finished')
   @ApiOperation({ summary: 'Takımın son oynanan maçları' })
   @ApiQuery({ name: 'teamId', example: 645 })
