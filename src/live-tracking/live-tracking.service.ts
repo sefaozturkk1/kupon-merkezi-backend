@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { LiveGateway } from '../gateway/live.gateway';
+import { StatisticsService } from '../statistics/statistics.service';
 
 @Injectable()
 export class LiveTrackingService implements OnModuleInit {
@@ -14,6 +15,7 @@ export class LiveTrackingService implements OnModuleInit {
     private prisma: PrismaService,
     private configService: ConfigService,
     private liveGateway: LiveGateway,
+    private statisticsService: StatisticsService,
   ) {
     this.apiKey = this.configService.get<string>('API_FOOTBALL_KEY') || '';
     this.apiHost = this.configService.get<string>('API_FOOTBALL_HOST') || 'v3.football.api-sports.io';
@@ -83,8 +85,8 @@ export class LiveTrackingService implements OnModuleInit {
       }
 
       return matchData;
-    } catch (error) {
-      console.error('Match details fetch error:', error.message);
+    } catch (error: any) {
+      console.error('Match details fetch error:', error.response?.data || error.message);
       return null;
     }
   }
@@ -147,9 +149,9 @@ export class LiveTrackingService implements OnModuleInit {
         const oldAwayScore = selection.awayScore;
 
         const newStatus = this.evaluateSelection(selection, match);
-        const matchStatus = this.mapMatchStatus(match.fixture.status.short);
-        const newHomeScore = match.goals.home;
-        const newAwayScore = match.goals.away;
+        const matchStatus = this.mapMatchStatus(match.fixture?.status?.short || 'NS');
+        const newHomeScore = match.goals?.home ?? null;
+        const newAwayScore = match.goals?.away ?? null;
 
         await this.prisma.couponSelection.update({
           where: { id: selection.id },
@@ -208,9 +210,16 @@ export class LiveTrackingService implements OnModuleInit {
 
   // Tahmin değerlendirme (gol + istatistik bazlı)
   private evaluateSelection(selection: any, match: any): string {
-    const homeScore = match.goals.home ?? 0;
-    const awayScore = match.goals.away ?? 0;
-    const isFinished = ['FT', 'AET', 'PEN'].includes(match.fixture.status.short);
+    const shortStatus = match.fixture?.status?.short || 'NS';
+    
+    // Maç henüz başlamamışsa PENDING kalsın!
+    if (['NS', 'TBD', 'PST', 'CANC', 'ABD'].includes(shortStatus)) {
+      return 'PENDING';
+    }
+    
+    const homeScore = match.goals?.home ?? 0;
+    const awayScore = match.goals?.away ?? 0;
+    const isFinished = ['FT', 'AET', 'PEN'].includes(shortStatus);
     const totalGoals = homeScore + awayScore;
     const stats = match._statistics; // korner, kart vb.
 
@@ -341,17 +350,19 @@ export class LiveTrackingService implements OnModuleInit {
       const anyLost = coupon.selections.some(s => s.status === 'LOST');
       const anyLive = coupon.selections.some(s => ['WINNING', 'LOSING'].includes(s.status));
       const allSettled = coupon.selections.every(s => ['WON', 'LOST', 'VOID'].includes(s.status));
+      const anyStarted = coupon.selections.some(s => !['PENDING'].includes(s.status));
 
       let newStatus: string;
 
-      if (anyLost && allSettled) {
+      // 🔴 BİR MAÇ BİLE YATARSA KUPON YATAR — bu en öncelikli kural!
+      if (anyLost) {
         newStatus = 'LOST';
       } else if (allWon) {
         newStatus = 'WON';
       } else if (anyLive) {
         newStatus = 'LIVE';
-      } else if (anyLost && !allSettled) {
-        newStatus = 'LOST'; // Bir tane bile yatarsa kupon yatar
+      } else if (anyStarted) {
+        newStatus = 'LIVE';
       } else {
         newStatus = 'PENDING';
       }
@@ -386,6 +397,11 @@ export class LiveTrackingService implements OnModuleInit {
           });
 
           console.log(`🎉 KUPON KAZANDI: "${coupon.title}" | Kazanç: ${coupon.potentialWin} ₺`);
+          
+          // 📊 İstatistikleri güncelle
+          await this.statisticsService.updateStatsOnCouponSettled(
+            coupon.userId, 'WON', Number(coupon.stakeAmount), Number(coupon.potentialWin),
+          ).catch(e => console.error('İstatistik güncelleme hatası:', e.message));
         } else if (newStatus === 'LOST') {
           // ❌ Kupon kaybetti
           this.liveGateway.emitCouponUpdate(coupon.id, {
@@ -396,6 +412,11 @@ export class LiveTrackingService implements OnModuleInit {
           });
 
           console.log(`❌ KUPON KAYBETTİ: "${coupon.title}"`);
+          
+          // 📊 İstatistikleri güncelle
+          await this.statisticsService.updateStatsOnCouponSettled(
+            coupon.userId, 'LOST', Number(coupon.stakeAmount), Number(coupon.potentialWin),
+          ).catch(e => console.error('İstatistik güncelleme hatası:', e.message));
         } else if (newStatus === 'LIVE' && oldStatus === 'PENDING') {
           // 🔴 Kupon canlıya geçti
           this.liveGateway.emitCouponUpdate(coupon.id, {

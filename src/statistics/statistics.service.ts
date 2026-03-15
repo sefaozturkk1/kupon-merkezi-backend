@@ -17,7 +17,7 @@ export class StatisticsService {
       where: {
         userId,
         createdAt: { gte: dateFilter },
-        status: { in: ['WON', 'LOST'] },
+        status: { in: ['WON', 'LOST', 'LIVE'] },
       },
       select: {
         status: true,
