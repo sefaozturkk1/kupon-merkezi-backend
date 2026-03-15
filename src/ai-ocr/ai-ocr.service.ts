@@ -49,6 +49,11 @@ export class AiOcrService {
       const promptText = `Sen bir bahis kuponu analiz asistanısın. Yüklenen kupon fotoğrafından
 maçları, bahis seçeneklerini, oranları ve kupon bilgilerini çıkarıyorsun.
 
+ÖNEMLİ KURALLAR:
+1) Maç SAATLERİNİ (Örn: 16:00, 20:45) kesinlikle oran (odds) olarak alma!
+2) Oranlar genellikle 1.50, 2.10, 3.30 gibi ondalıklı, virgüllü veya küsuratlı sayılardır.
+3) Toplam Oran (totalOdds) ayrıdır, her maçın kendi oranı (odds) ayrıdır. Birbirine karıştırma.
+
 Yanıtını SADECE JSON formatında ver, markdown kullanma.
 
 JSON formatı:

@@ -85,8 +85,11 @@ export class CouponService {
         const teams = await this.footballApi.searchTeam(homeTeam);
         if (teams.length > 0) {
           const teamId = teams[0].id;
-          // Bu takımın yaklaşan maçlarını çek
-          const matches = await this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
+          // Bu takımın yaklaşan VE geçmiş/canlı maçlarını çek
+          const upcoming = await this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
+          const recent = await this.footballApi.getTeamFinishedMatches(teamId);
+          const today = await this.footballApi.getTeamTodayMatches(teamId);
+          const matches = [...today, ...upcoming, ...recent];
           
           // Deplasman takımıyla eşleşen maçı bul
           const matchFound = matches.find((m: any) => {

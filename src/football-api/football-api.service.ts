@@ -88,6 +88,15 @@ export class FootballApiService {
   }
 
   // ============================================
+  // Takımın BULUNDUĞUMUZ GÜN oynanan maçları (Canlıları yakalamak için)
+  // ============================================
+  async getTeamTodayMatches(teamId: number) {
+    const today = new Date().toISOString().split('T')[0];
+    const data = await this.request('fixtures', { team: teamId, date: today });
+    return (data.response || []).map((item: any) => this.formatMatch(item));
+  }
+
+  // ============================================
   // Belirli bir maçın detayı
   // ============================================
   async getMatchById(matchId: number) {
