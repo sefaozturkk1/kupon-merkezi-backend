@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
+import { FootballApiService } from '../football-api/football-api.service';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class CouponService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private footballApi: FootballApiService,
+  ) {}
 
   // Manuel kupon oluşturma
   async createCoupon(userId: string, dto: CreateCouponDto) {
@@ -55,7 +59,7 @@ export class CouponService {
     return coupon;
   }
 
-  // AI/Fotoğraftan kupon oluşturma
+  // AI/Fotoğraftan kupon oluşturma — matchId eşleştirmeli
   async createCouponFromAI(
     userId: string,
     parsedData: any,
@@ -65,15 +69,51 @@ export class CouponService {
   ) {
     const couponTitle = title || parsedData.title || 'AI Kupon';
     
-    // Sanitize selections to avoid Prisma Decimal(null) or NaN errors
-    const sanitizedSelections = (parsedData.selections || []).map((sel: any) => ({
-      homeTeam: sel.homeTeam || 'Bilinmiyor',
-      awayTeam: sel.awayTeam || 'Bilinmiyor',
-      league: sel.league || null,
-      betType: sel.betType || 'Bilinmiyor',
-      prediction: sel.prediction || '-',
-      odds: typeof sel.odds === 'number' && !isNaN(sel.odds) && sel.odds > 0 ? sel.odds : 1.0,
-    }));
+    // Selections'ları hazırla + matchId eşleştir
+    const sanitizedSelections: any[] = [];
+
+    for (const sel of (parsedData.selections || [])) {
+      const homeTeam = sel.homeTeam || 'Bilinmiyor';
+      const awayTeam = sel.awayTeam || 'Bilinmiyor';
+      
+      // 🔑 API'den takımı ara ve matchId bul
+      let matchId: string | null = null;
+      
+      try {
+        // Ev sahibi takımı ara
+        const teams = await this.footballApi.searchTeam(homeTeam);
+        if (teams.length > 0) {
+          const teamId = teams[0].id;
+          // Bu takımın yaklaşan maçlarını çek
+          const matches = await this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
+          
+          // Deplasman takımıyla eşleşen maçı bul
+          const matchFound = matches.find((m: any) => {
+            const awayName = (m.awayTeam?.name || '').toLowerCase();
+            const homeName = (m.homeTeam?.name || '').toLowerCase();
+            return awayName.includes(awayTeam.toLowerCase()) || 
+                   homeName.includes(homeTeam.toLowerCase());
+          });
+
+          if (matchFound) {
+            matchId = String(matchFound.matchId);
+            console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ matchId eşleştirme hatası (${homeTeam} vs ${awayTeam}):`, e.message);
+      }
+
+      sanitizedSelections.push({
+        matchId,
+        homeTeam,
+        awayTeam,
+        league: sel.league || null,
+        betType: sel.betType || 'Bilinmiyor',
+        prediction: sel.prediction || '-',
+        odds: typeof sel.odds === 'number' && !isNaN(sel.odds) && sel.odds > 0 ? sel.odds : 1.0,
+      });
+    }
 
     let totalOdds = parsedData.totalOdds;
     if (!totalOdds || totalOdds < 1.0) {
@@ -98,6 +138,7 @@ export class CouponService {
         userId,
         selections: {
           create: sanitizedSelections.map((sel: any) => ({
+            matchId: sel.matchId,
             homeTeam: sel.homeTeam,
             awayTeam: sel.awayTeam,
             league: sel.league,

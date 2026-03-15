@@ -53,7 +53,7 @@ export class LiveTrackingService implements OnModuleInit {
     }
   }
 
-  // Maç detayı getir
+  // Maç detayı getir (skor + istatistikler dahil)
   async getMatchDetails(matchId: string) {
     try {
       const response = await axios.get(
@@ -64,11 +64,53 @@ export class LiveTrackingService implements OnModuleInit {
           },
         },
       );
-      return response.data.response?.[0] || null;
+      const matchData = response.data.response?.[0] || null;
+      if (!matchData) return null;
+
+      // İstatistikleri de çek (korner, kart, şut vb.)
+      try {
+        const statsResponse = await axios.get(
+          `https://${this.apiHost}/fixtures/statistics?fixture=${matchId}`,
+          {
+            headers: {
+              'x-apisports-key': this.apiKey,
+            },
+          },
+        );
+        matchData._statistics = this.parseStatistics(statsResponse.data.response || []);
+      } catch (statsErr) {
+        matchData._statistics = null;
+      }
+
+      return matchData;
     } catch (error) {
       console.error('Match details fetch error:', error.message);
       return null;
     }
+  }
+
+  // İstatistikleri düzenli objeye çevir
+  private parseStatistics(statsArray: any[]): any {
+    if (!statsArray || statsArray.length < 2) return null;
+
+    const home = statsArray[0]?.statistics || [];
+    const away = statsArray[1]?.statistics || [];
+
+    const getStat = (arr: any[], type: string): number => {
+      const stat = arr.find((s: any) => s.type === type);
+      return stat ? (parseInt(stat.value) || 0) : 0;
+    };
+
+    return {
+      corners: { home: getStat(home, 'Corner Kicks'), away: getStat(away, 'Corner Kicks') },
+      yellowCards: { home: getStat(home, 'Yellow Cards'), away: getStat(away, 'Yellow Cards') },
+      redCards: { home: getStat(home, 'Red Cards'), away: getStat(away, 'Red Cards') },
+      totalShots: { home: getStat(home, 'Total Shots'), away: getStat(away, 'Total Shots') },
+      shotsOnTarget: { home: getStat(home, 'Shots on Goal'), away: getStat(away, 'Shots on Goal') },
+      fouls: { home: getStat(home, 'Fouls'), away: getStat(away, 'Fouls') },
+      offsides: { home: getStat(home, 'Offsides'), away: getStat(away, 'Offsides') },
+      possession: { home: getStat(home, 'Ball Possession'), away: getStat(away, 'Ball Possession') },
+    };
   }
 
   // Kuponlardaki maçları güncelle
@@ -164,57 +206,119 @@ export class LiveTrackingService implements OnModuleInit {
     await this.updateCouponStatuses();
   }
 
-  // Tahmin değerlendirme
+  // Tahmin değerlendirme (gol + istatistik bazlı)
   private evaluateSelection(selection: any, match: any): string {
     const homeScore = match.goals.home ?? 0;
     const awayScore = match.goals.away ?? 0;
     const isFinished = ['FT', 'AET', 'PEN'].includes(match.fixture.status.short);
     const totalGoals = homeScore + awayScore;
+    const stats = match._statistics; // korner, kart vb.
 
     let isWinning = false;
 
     // Bahis tipini normalize et
     const betType = selection.betType.toLowerCase().trim();
+    const pred = selection.prediction.toLowerCase().trim();
+
+    // ========== GOL BAZLI BAHİSLER ==========
 
     // --- MAÇ SONUCU (1X2) ---
-    if (betType.includes('maç sonucu') || betType.includes('1x2') || betType === 'match result') {
+    if (betType.includes('maç sonucu') || betType.includes('1x2') || betType === 'match result' || betType === 'ms') {
       if (selection.prediction === '1') isWinning = homeScore > awayScore;
-      else if (selection.prediction === 'X' || selection.prediction === 'x') isWinning = homeScore === awayScore;
+      else if (pred === 'x') isWinning = homeScore === awayScore;
       else if (selection.prediction === '2') isWinning = awayScore > homeScore;
     }
     // --- ÇİFTE ŞANS ---
     else if (betType.includes('çifte şans')) {
-      if (selection.prediction === '1-X') isWinning = homeScore >= awayScore;
-      else if (selection.prediction === '1-2') isWinning = homeScore !== awayScore;
-      else if (selection.prediction === 'X-2') isWinning = awayScore >= homeScore;
+      if (pred === '1-x' || pred === '1x') isWinning = homeScore >= awayScore;
+      else if (pred === '1-2' || pred === '12') isWinning = homeScore !== awayScore;
+      else if (pred === 'x-2' || pred === 'x2') isWinning = awayScore >= homeScore;
     }
-    // --- ALT/ÜST ---
-    else if (betType.includes('alt/üst')) {
-      const threshold = parseFloat(betType.match(/[\d.]+/)?.[0] || '2.5');
-      const pred = selection.prediction.toLowerCase();
+    // --- GOL ALT/ÜST ---
+    else if (betType.includes('alt/üst') && !betType.includes('korner') && !betType.includes('kart')) {
+      const thresholdMatch = betType.match(/[\d.]+/);
+      const threshold = thresholdMatch ? parseFloat(thresholdMatch[0]) : 2.5;
       if (pred.includes('üst') || pred.includes('over')) isWinning = totalGoals > threshold;
       else isWinning = totalGoals < threshold;
     }
     // --- KARŞILIKLI GOL ---
-    else if (betType.includes('karşılıklı gol') || betType.includes('kg')) {
-      const pred = selection.prediction.toLowerCase();
-      if (pred === 'var' || pred === 'yes') isWinning = homeScore > 0 && awayScore > 0;
+    else if (betType.includes('karşılıklı gol') || betType === 'kg' || betType.includes('btts')) {
+      if (pred === 'var' || pred === 'yes' || pred === 'evet') isWinning = homeScore > 0 && awayScore > 0;
       else isWinning = homeScore === 0 || awayScore === 0;
     }
     // --- TEK/ÇİFT GOL ---
     else if (betType.includes('tek/çift')) {
-      if (selection.prediction.toLowerCase() === 'tek') isWinning = totalGoals % 2 !== 0;
+      if (pred === 'tek' || pred === 'odd') isWinning = totalGoals % 2 !== 0;
       else isWinning = totalGoals % 2 === 0;
     }
     // --- İLK YARI SONUCU ---
-    else if (betType.includes('ilk yarı sonucu')) {
+    else if (betType.includes('ilk yarı') || betType.includes('iy')) {
       const htHome = match.score?.halftime?.home ?? 0;
       const htAway = match.score?.halftime?.away ?? 0;
       if (selection.prediction === '1') isWinning = htHome > htAway;
-      else if (selection.prediction === 'X' || selection.prediction === 'x') isWinning = htHome === htAway;
+      else if (pred === 'x') isWinning = htHome === htAway;
       else if (selection.prediction === '2') isWinning = htAway > htHome;
     }
-    // --- BİLİNMEYEN ---
+    // --- TOPLAM GOL (Tam sayı: 0-1, 2-3, 4-5, 6+) ---
+    else if (betType.includes('toplam gol')) {
+      if (pred.includes('0-1')) isWinning = totalGoals <= 1;
+      else if (pred.includes('2-3')) isWinning = totalGoals >= 2 && totalGoals <= 3;
+      else if (pred.includes('4-5')) isWinning = totalGoals >= 4 && totalGoals <= 5;
+      else if (pred.includes('6+') || pred.includes('6 ve üzeri')) isWinning = totalGoals >= 6;
+    }
+    // --- HANDİKAP ---
+    else if (betType.includes('handikap')) {
+      const handicapMatch = betType.match(/[+-]?[\d.]+/);
+      const handicap = handicapMatch ? parseFloat(handicapMatch[0]) : 0;
+      if (selection.prediction === '1') isWinning = (homeScore + handicap) > awayScore;
+      else if (selection.prediction === '2') isWinning = (awayScore + handicap) > homeScore;
+    }
+
+    // ========== İSTATİSTİK BAZLI BAHİSLER ==========
+    // (Sadece istatistik verisi varsa değerlendir)
+
+    else if (stats) {
+      const totalCorners = (stats.corners?.home ?? 0) + (stats.corners?.away ?? 0);
+      const totalYellowCards = (stats.yellowCards?.home ?? 0) + (stats.yellowCards?.away ?? 0);
+      const totalCards = totalYellowCards + (stats.redCards?.home ?? 0) + (stats.redCards?.away ?? 0);
+
+      // --- KORNER ALT/ÜST ---
+      if (betType.includes('korner') && betType.includes('alt/üst')) {
+        const thresholdMatch = betType.match(/[\d.]+/);
+        const threshold = thresholdMatch ? parseFloat(thresholdMatch[0]) : 9.5;
+        if (pred.includes('üst') || pred.includes('over')) isWinning = totalCorners > threshold;
+        else isWinning = totalCorners < threshold;
+      }
+      // --- KORNER TEK/ÇİFT ---
+      else if (betType.includes('korner') && betType.includes('tek/çift')) {
+        if (pred === 'tek' || pred === 'odd') isWinning = totalCorners % 2 !== 0;
+        else isWinning = totalCorners % 2 === 0;
+      }
+      // --- KART ALT/ÜST ---
+      else if (betType.includes('kart') && betType.includes('alt/üst')) {
+        const thresholdMatch = betType.match(/[\d.]+/);
+        const threshold = thresholdMatch ? parseFloat(thresholdMatch[0]) : 3.5;
+        if (pred.includes('üst') || pred.includes('over')) isWinning = totalCards > threshold;
+        else isWinning = totalCards < threshold;
+      }
+      // --- TOPLAM KORNER ---
+      else if (betType.includes('toplam korner')) {
+        if (pred.includes('üst') || pred.includes('over')) {
+          const thresholdMatch = pred.match(/[\d.]+/);
+          const threshold = thresholdMatch ? parseFloat(thresholdMatch[0]) : 9.5;
+          isWinning = totalCorners > threshold;
+        } else {
+          const thresholdMatch = pred.match(/[\d.]+/);
+          const threshold = thresholdMatch ? parseFloat(thresholdMatch[0]) : 9.5;
+          isWinning = totalCorners < threshold;
+        }
+      }
+      // --- İSTATİSTİK VARSA AMA BİLİNMEYEN TİP ---
+      else {
+        return selection.status;
+      }
+    }
+    // --- BİLİNMEYEN BAHİS TİPİ ---
     else {
       return selection.status;
     }
