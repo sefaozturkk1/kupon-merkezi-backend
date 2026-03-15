@@ -92,12 +92,28 @@ export class CouponService {
           const live = await this.footballApi.getTeamLiveMatches(teamId);
           const matches = [...live, ...upcoming, ...recent];
           
+          // Takım isimlerini Türkçe karakterlerden arındırıp normalize eden yardımcı fonksiyon
+          const normalizeName = (name: string) => {
+            return (name || '')
+              .replace(/İ/g, 'I').replace(/ı/g, 'i')
+              .replace(/Ö/g, 'O').replace(/ö/g, 'o')
+              .replace(/Ü/g, 'U').replace(/ü/g, 'u')
+              .replace(/Ş/g, 'S').replace(/ş/g, 's')
+              .replace(/Ğ/g, 'G').replace(/ğ/g, 'g')
+              .replace(/Ç/g, 'C').replace(/ç/g, 'c')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '');
+          };
+
           // Deplasman takımıyla eşleşen maçı bul
           const matchFound = matches.find((m: any) => {
-            const awayName = (m.awayTeam?.name || '').toLowerCase();
-            const homeName = (m.homeTeam?.name || '').toLowerCase();
-            return awayName.includes(awayTeam.toLowerCase()) || 
-                   homeName.includes(homeTeam.toLowerCase());
+            const mAway = normalizeName(m.awayTeam?.name);
+            const mHome = normalizeName(m.homeTeam?.name);
+            const targetAway = normalizeName(awayTeam);
+            const targetHome = normalizeName(homeTeam);
+            
+            return mAway.includes(targetAway) || targetAway.includes(mAway) || 
+                   mHome.includes(targetHome) || targetHome.includes(mHome);
           });
 
           if (matchFound) {
