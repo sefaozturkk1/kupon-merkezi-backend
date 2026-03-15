@@ -32,8 +32,24 @@ export class CouponController {
     if (reqInfo?.user?.sub) return reqInfo.user.sub;
     
     // Veritabanından herhangi bir aktif kullanıcı bul
-    const user = await this.prisma.user.findFirst();
-    return user?.id || 'c731cc5b-8d7c-4f1c-a529-9c94ea20e775';
+    let user = await this.prisma.user.findFirst();
+
+    // Veritabanı tamamen boşsa (clean-db çalıştıysa) dummy bir kullanıcı oluştur
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          id: 'c731cc5b-8d7c-4f1c-a529-9c94ea20e775',
+          telegramId: 'demo_' + Date.now().toString(),
+          username: 'demouser',
+          firstName: 'Demo',
+          lastName: 'User',
+          role: 'ADMIN',
+        },
+      });
+      console.log('✅ Veritabanı boş olduğu için otomatik Demo Kullanıcı oluşturuldu:', user.id);
+    }
+
+    return user.id;
   }
 
   @Post()
