@@ -78,6 +78,7 @@ export class CouponService {
       
       // 🔑 API'den takımı ara ve matchId bul
       let matchId: string | null = null;
+      let matchDate: Date | null = null;
       
       try {
         // Ev sahibi takımı ara
@@ -97,7 +98,8 @@ export class CouponService {
 
           if (matchFound) {
             matchId = String(matchFound.matchId);
-            console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId}`);
+            matchDate = matchFound.date ? new Date(matchFound.date) : null;
+            console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId} (${matchDate})`);
           }
         }
       } catch (e) {
@@ -106,6 +108,7 @@ export class CouponService {
 
       sanitizedSelections.push({
         matchId,
+        matchDate,
         homeTeam,
         awayTeam,
         league: sel.league || null,
@@ -139,6 +142,7 @@ export class CouponService {
         selections: {
           create: sanitizedSelections.map((sel: any) => ({
             matchId: sel.matchId,
+            matchDate: sel.matchDate,
             homeTeam: sel.homeTeam,
             awayTeam: sel.awayTeam,
             league: sel.league,
