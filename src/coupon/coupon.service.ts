@@ -88,8 +88,8 @@ export class CouponService {
           // Bu takımın yaklaşan VE geçmiş/canlı maçlarını çek
           const upcoming = await this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
           const recent = await this.footballApi.getTeamFinishedMatches(teamId);
-          const today = await this.footballApi.getTeamTodayMatches(teamId);
-          const matches = [...today, ...upcoming, ...recent];
+          const live = await this.footballApi.getTeamLiveMatches(teamId);
+          const matches = [...live, ...upcoming, ...recent];
           
           // Deplasman takımıyla eşleşen maçı bul
           const matchFound = matches.find((m: any) => {
