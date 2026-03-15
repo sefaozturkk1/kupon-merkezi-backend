@@ -21,35 +21,35 @@ export class FootballApiController {
 
   @Get('search-team')
   @ApiOperation({ summary: 'Takım ara' })
-  @ApiQuery({ name: 'q', description: 'Takım adı', example: 'Real Madrid' })
+  @ApiQuery({ name: 'q', description: 'Takım adı', example: 'Galatasaray' })
   async searchTeam(@Query('q') query: string) {
     return this.footballApi.searchTeam(query);
   }
 
   @Get('team-upcoming')
   @ApiOperation({ summary: 'Takımın yaklaşan maçları' })
-  @ApiQuery({ name: 'teamId', example: 86 })
+  @ApiQuery({ name: 'teamId', example: 645, description: 'Galatasaray=645, Fenerbahçe=611, Beşiktaş=549, Trabzonspor=607' })
   async getTeamUpcoming(@Query('teamId') teamId: number) {
     return this.footballApi.getTeamMatches(teamId, 'SCHEDULED');
   }
 
   @Get('team-finished')
   @ApiOperation({ summary: 'Takımın son oynanan maçları' })
-  @ApiQuery({ name: 'teamId', example: 86 })
+  @ApiQuery({ name: 'teamId', example: 645 })
   async getTeamFinished(@Query('teamId') teamId: number) {
     return this.footballApi.getTeamFinishedMatches(teamId);
   }
 
   @Get('match')
   @ApiOperation({ summary: 'Maç detayı (skor, durum)' })
-  @ApiQuery({ name: 'id', description: 'Match ID' })
+  @ApiQuery({ name: 'id', description: 'Match ID (fixture ID)' })
   async getMatch(@Query('id') id: number) {
     return this.footballApi.getMatchById(id);
   }
 
   @Get('competition')
   @ApiOperation({ summary: 'Lig maçları' })
-  @ApiQuery({ name: 'code', example: 'PL', description: 'Lig kodu (PL, PD, BL1, SA, FL1)' })
+  @ApiQuery({ name: 'code', example: '203', description: 'Lig ID (203=Süper Lig, 39=PL, 140=La Liga, 78=Bundesliga, 135=Serie A)' })
   @ApiQuery({ name: 'matchday', required: false, description: 'Hafta numarası' })
   async getCompetitionMatches(
     @Query('code') code: string,
@@ -60,8 +60,14 @@ export class FootballApiController {
 
   @Get('standings')
   @ApiOperation({ summary: 'Lig puan durumu' })
-  @ApiQuery({ name: 'code', example: 'PL' })
+  @ApiQuery({ name: 'code', example: '203', description: 'Lig ID (203=Süper Lig)' })
   async getStandings(@Query('code') code: string) {
     return this.footballApi.getStandings(code);
+  }
+
+  @Get('leagues')
+  @ApiOperation({ summary: 'Desteklenen popüler ligler' })
+  async getLeagues() {
+    return this.footballApi.getPopularLeagues();
   }
 }
