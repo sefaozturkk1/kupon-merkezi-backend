@@ -81,8 +81,9 @@ export class CouponService {
       let matchDate: Date | null = null;
       
       try {
-        // Ev sahibi takımı ara
-        const teams = await this.footballApi.searchTeam(homeTeam);
+        // Ev sahibi takımı ara (Türkçe karakter ve sembolleri İngilizce'ye çevirip API hata vermesin diye temizle)
+        const safeSearchTerm = homeTeam.replace(/İ/g, 'I').replace(/ı/g, 'i').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9 ]/g, '');
+        const teams = await this.footballApi.searchTeam(safeSearchTerm);
         if (teams.length > 0) {
           const teamId = teams[0].id;
           // Bu takımın yaklaşan VE geçmiş/canlı maçlarını çek
@@ -103,7 +104,11 @@ export class CouponService {
             matchId = String(matchFound.matchId);
             matchDate = matchFound.date ? new Date(matchFound.date) : null;
             console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId} (${matchDate})`);
+          } else {
+            console.log(`❌ Maç eşleşmedi: ${homeTeam} vs ${awayTeam}. Bulunan API Maçları:`, matches.map(m => `${m.homeTeam?.name} - ${m.awayTeam?.name}`));
           }
+        } else {
+          console.log(`❌ Takım API'de bulunamadı: ${homeTeam}`);
         }
       } catch (e) {
         console.warn(`⚠️ matchId eşleştirme hatası (${homeTeam} vs ${awayTeam}):`, e.message);
