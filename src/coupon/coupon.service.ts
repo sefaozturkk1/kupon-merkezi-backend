@@ -79,6 +79,9 @@ export class CouponService {
       // 🔑 API'den takımı ara ve matchId bul
       let matchId: string | null = null;
       let matchDate: Date | null = null;
+      let matchStatus: string = 'NOT_STARTED';
+      let homeScore: number | null = null;
+      let awayScore: number | null = null;
       
       try {
         // Ev sahibi takımı ara (Türkçe karakter ve sembolleri İngilizce'ye çevirip API hata vermesin diye temizle)
@@ -119,7 +122,21 @@ export class CouponService {
           if (matchFound) {
             matchId = String(matchFound.matchId);
             matchDate = matchFound.date ? new Date(matchFound.date) : null;
-            console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId} (${matchDate})`);
+            
+            // Canlı maç durumunu ve skorunu kaydet
+            if (matchFound.status === 'IN_PLAY' || matchFound.status === 'PAUSED') {
+              matchStatus = matchFound.status === 'PAUSED' ? 'HALFTIME' : 'LIVE';
+              homeScore = matchFound.score?.homeFullTime ?? 0;
+              awayScore = matchFound.score?.awayFullTime ?? 0;
+              console.log(`🔴 CANLI MAÇ: ${homeTeam} vs ${awayTeam} → ${matchId} | Skor: ${homeScore}-${awayScore} | Durum: ${matchStatus}`);
+            } else if (matchFound.status === 'FINISHED') {
+              matchStatus = 'FINISHED';
+              homeScore = matchFound.score?.homeFullTime ?? 0;
+              awayScore = matchFound.score?.awayFullTime ?? 0;
+              console.log(`✅ BİTMİŞ MAÇ: ${homeTeam} vs ${awayTeam} → ${matchId} | Skor: ${homeScore}-${awayScore}`);
+            } else {
+              console.log(`✅ AI Kupon matchId eşleştirildi: ${homeTeam} vs ${awayTeam} → ${matchId} (${matchDate})`);
+            }
           } else {
             console.log(`❌ Maç eşleşmedi: ${homeTeam} vs ${awayTeam}. Bulunan API Maçları:`, matches.map(m => `${m.homeTeam?.name} - ${m.awayTeam?.name}`));
           }
@@ -139,6 +156,9 @@ export class CouponService {
         betType: sel.betType || 'Bilinmiyor',
         prediction: sel.prediction || '-',
         odds: typeof sel.odds === 'number' && !isNaN(sel.odds) && sel.odds > 0 ? sel.odds : 1.0,
+        matchStatus,
+        homeScore,
+        awayScore,
       });
     }
 
@@ -153,9 +173,14 @@ export class CouponService {
     const stakeAmount = Number(parsedData.stakeAmount) || 10;
     const potentialWin = totalOdds * stakeAmount;
 
+    // Kuponda canlı maç varsa kupon durumunu LIVE yap
+    const hasLiveMatch = sanitizedSelections.some((sel: any) => sel.matchStatus === 'LIVE' || sel.matchStatus === 'HALFTIME');
+    const couponStatus = hasLiveMatch ? 'LIVE' : 'PENDING';
+
     const coupon = await this.prisma.coupon.create({
       data: {
         title: couponTitle,
+        status: couponStatus as any,
         totalOdds: new Prisma.Decimal(totalOdds.toFixed(2)),
         stakeAmount: new Prisma.Decimal(stakeAmount),
         potentialWin: new Prisma.Decimal(potentialWin.toFixed(2)),
@@ -173,6 +198,9 @@ export class CouponService {
             betType: sel.betType,
             prediction: sel.prediction,
             odds: new Prisma.Decimal(sel.odds.toFixed(2)),
+            matchStatus: sel.matchStatus,
+            homeScore: sel.homeScore,
+            awayScore: sel.awayScore,
           })),
         },
       },
