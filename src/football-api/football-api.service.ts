@@ -91,8 +91,13 @@ export class FootballApiService {
   // Takımın CANLI oynanan maçları
   // ============================================
   async getTeamLiveMatches(teamId: number) {
-    const data = await this.request('fixtures', { live: 'all', team: teamId });
-    return (data.response || []).map((item: any) => this.formatMatch(item));
+    // API-Football bazen live=all ve team=X filtrelerini birleştirince sorun çıkarabiliyor
+    // Bu yüzden tüm canlıları çekip manuel filtreliyoruz.
+    const allLive = await this.getLiveMatches();
+    return allLive.filter((m: any) => 
+      m.homeTeam.id === Number(teamId) || 
+      m.awayTeam.id === Number(teamId)
+    );
   }
 
   // ============================================
